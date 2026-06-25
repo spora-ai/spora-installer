@@ -22,13 +22,13 @@ final class SporaPluginInstallerPlugin implements PluginInterface
 {
     public function activate(Composer $composer, IOInterface $io): void
     {
-        $installers = [
+        $manager = $composer->getInstallationManager();
+
+        foreach ([
             new SporaPluginInstaller($io, $composer),
             new SporaFrontendInstaller($io, $composer),
-        ];
-
-        foreach ($installers as $installer) {
-            $composer->getInstallationManager()->addInstaller($installer);
+        ] as $installer) {
+            $manager->addInstaller($installer);
         }
     }
 

@@ -2,37 +2,9 @@
 
 declare(strict_types=1);
 
-use Composer\Composer;
-use Composer\Config;
 use Composer\IO\NullIO;
 use Composer\Package\Package;
-use Mockery as M;
 use Spora\Composer\SporaPluginInstaller;
-
-/**
- * Build a Composer mock that survives `new SporaPluginInstaller($io, $composer)`.
- *
- * The parent LibraryInstaller constructor chains
- * `$composer->getConfig()->get('vendor-dir')` to build an InstallPathRegex.
- * We pass a real Config (cheap, fully initialised) and shouldIgnoreMissing()
- * the rest of the Composer dependency graph.
- *
- * Guarded with function_exists so this self-contained copy does not collide
- * with the identically-named helper in SporaFrontendInstallerTest.php when
- * PHPUnit loads both files into the same process.
- */
-if (!function_exists('makeComposerMock')) {
-    function makeComposerMock(): Composer
-    {
-        $config = new Config(false, '/vendor');
-
-        $composer = M::mock(Composer::class);
-        $composer->shouldReceive('getConfig')->andReturn($config);
-        $composer->shouldIgnoreMissing();
-
-        return $composer;
-    }
-}
 
 test('supports() returns true only for the spora-plugin type', function (): void {
     $installer = new SporaPluginInstaller(new NullIO(), makeComposerMock());
