@@ -3,7 +3,7 @@
     "description": "Routes `spora-plugin` package types to `plugins/{$name}/` when installed via Composer. Companion to spora-ai/spora-core.",
     "type": "composer-plugin",
     "license": "MIT",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "require": {
         "php": "^8.4.1",
         "composer-plugin-api": "^2.0"
@@ -34,5 +34,8 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "extra": {
+        "class": "Spora\\Composer\\SporaPluginInstallerPlugin"
+    }
 }
