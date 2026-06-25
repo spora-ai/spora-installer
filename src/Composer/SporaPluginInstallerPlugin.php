@@ -9,16 +9,27 @@ use Composer\IO\IOInterface;
 use Composer\Plugin\PluginInterface;
 
 /**
- * Composer plugin entry point. Registers {@see SporaPluginInstaller} with
- * Composer's installation manager so that `spora-plugin` packages install
- * into `plugins/{$name}/` instead of the default `vendor/` location.
+ * Composer plugin entry point. Registers the Spora installers with
+ * Composer's installation manager:
+ *
+ * - {@see SporaPluginInstaller} routes `spora-plugin` packages into
+ *   `plugins/{$name}/` instead of the default `vendor/` location.
+ * - {@see SporaFrontendInstaller} routes `spora-frontend` packages into
+ *   `public/dist/` — the prebuilt frontend assets the operator's PHP
+ *   project serves at runtime.
  */
 final class SporaPluginInstallerPlugin implements PluginInterface
 {
     public function activate(Composer $composer, IOInterface $io): void
     {
-        $installer = new SporaPluginInstaller($io, $composer);
-        $composer->getInstallationManager()->addInstaller($installer);
+        $installers = [
+            new SporaPluginInstaller($io, $composer),
+            new SporaFrontendInstaller($io, $composer),
+        ];
+
+        foreach ($installers as $installer) {
+            $composer->getInstallationManager()->addInstaller($installer);
+        }
     }
 
     public function deactivate(Composer $composer, IOInterface $io): void
