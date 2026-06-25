@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Spora\Composer;
 
-use Composer\Composer;
 use Composer\Installer\LibraryInstaller;
-use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 
 /**
@@ -21,11 +19,6 @@ use Composer\Package\PackageInterface;
 final class SporaFrontendInstaller extends LibraryInstaller
 {
     private const SPORA_FRONTEND_TYPE = 'spora-frontend';
-
-    public function __construct(IOInterface $io, Composer $composer)
-    {
-        parent::__construct($io, $composer);
-    }
 
     public function supports(string $packageType): bool
     {
