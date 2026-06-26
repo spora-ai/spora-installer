@@ -29,8 +29,8 @@ test('getInstallPath() uses just the last segment of the package name', function
     // Two packages from different vendors with the same short name must
     // not collide — the routing uses the short segment, which Composer
     // treats as the unique plugin directory.
-    $acme = new Package('acme/foo', '1.0.0.0', '1.0.0');
-    $core = new Package('spora-ai/foo', '1.0.0.0', '1.0.0');
+    $acme = new Package('acme/foo', '1.0.0.0', '1.0.0'); // NOSONAR — Composer's 4-segment canonical version, not a network address
+    $core = new Package('spora-ai/foo', '1.0.0.0', '1.0.0'); // NOSONAR — Composer's 4-segment canonical version, not a network address
 
     expect($installer->getInstallPath($acme))->toBe('plugins/foo/');
     expect($installer->getInstallPath($core))->toBe('plugins/foo/');
