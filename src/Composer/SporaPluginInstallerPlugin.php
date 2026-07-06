@@ -17,6 +17,10 @@ use Composer\Plugin\PluginInterface;
  * - {@see SporaFrontendInstaller} routes `spora-frontend` packages into
  *   `public/dist/` — the prebuilt frontend assets the operator's PHP
  *   project serves at runtime.
+ * - {@see SporaPluginFrontendInstaller} routes `spora-plugin-frontend`
+ *   packages into `public/plugins/{$slug}/`, copying the plugin's bundled
+ *   `frontend/` directory there so the host SPA can lazy-load each plugin's
+ *   pre-built bundle at runtime.
  */
 final class SporaPluginInstallerPlugin implements PluginInterface
 {
@@ -27,6 +31,7 @@ final class SporaPluginInstallerPlugin implements PluginInterface
         foreach ([
             new SporaPluginInstaller($io, $composer),
             new SporaFrontendInstaller($io, $composer),
+            new SporaPluginFrontendInstaller($io, $composer),
         ] as $installer) {
             $manager->addInstaller($installer);
         }
