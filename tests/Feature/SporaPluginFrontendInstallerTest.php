@@ -13,6 +13,11 @@ afterEach(function () {
     M::close();
 });
 
+const SAMPLE_BODY_CSS = "body { color: red; }\n";
+const SAMPLE_PLUGIN_NAME = 'acme/test-plugin';
+const TEST_WORK_PREFIX = '/spora-plugin-frontend-test-';
+const FIXTURE_PREFIX = '/spora-plugin-fixture-';
+
 /**
  * Build a Composer mock that survives `new SporaPluginFrontendInstaller($io, $composer)`.
  *
@@ -33,15 +38,15 @@ function makePluginFrontendComposerMock(): Composer
 }
 
 /**
- * Make a fake Composer package with a writable `frontend/` directory on disk
- * and the package's pretty name set. The `targetDir` and `type` are pinned so
- * the installer resolves `getInstallPath()` deterministically.
+ * Build a fake Composer package on disk. The package's `pretty name` and
+ * `type` are pinned so the installer resolves paths deterministically.
  *
+ * @param  array<string, string>  $files  relative-path => contents
  * @return array{package: Package, installPath: string, frontendDir: string, cleanup: callable}
  */
 function buildFakePluginPackage(string $prettyName, string $type, array $files): array
 {
-    $installPath = sys_get_temp_dir().'/spora-plugin-fixture-'.uniqid('', true);
+    $installPath = sys_get_temp_dir().FIXTURE_PREFIX.uniqid('', true);
     $frontendDir = $installPath.'/frontend';
     mkdir($frontendDir, 0o755, true);
 
@@ -77,9 +82,31 @@ function buildFakePluginPackage(string $prettyName, string $type, array $files):
 }
 
 /**
+ * Wrap a test body so it runs in an isolated CWD with the public/plugins
+ * directory torn down afterwards. Eliminates ~20 lines of repeated setup
+ * (mkdir, chdir, try/finally, cleanup) from each test.
+ */
+function inTempWorkdir(callable $body): void
+{
+    $work = sys_get_temp_dir().TEST_WORK_PREFIX.uniqid('', true);
+    mkdir($work, 0o755, true);
+    $previousCwd = getcwd();
+    chdir($work);
+
+    try {
+        $body($work);
+    } finally {
+        resetPublicPluginsDir();
+        chdir($previousCwd);
+        if (is_dir($work)) {
+            rmdir($work);
+        }
+    }
+}
+
+/**
  * Return the absolute destination the installer should have populated for a
- * given package slug. The installer writes under CWD, so the test pins CWD
- * to a temp directory and cleans it up after.
+ * given package slug. The installer writes under CWD.
  */
 function destinationFor(string $slug): string
 {
@@ -112,134 +139,76 @@ test('supports() returns true only for the spora-plugin-frontend type', function
 });
 
 test('copyFrontend() copies main.js, style.css, and nested assets verbatim to public/plugins/<slug>/', function (): void {
-    $work = sys_get_temp_dir().'/spora-plugin-frontend-test-'.uniqid('', true);
-    mkdir($work, 0o755, true);
-    $previousCwd = getcwd();
-    chdir($work);
-
-    try {
-        $fixture = buildFakePluginPackage('acme/test-plugin', 'spora-plugin-frontend', [
+    inTempWorkdir(function () use (&$fixture): void {
+        $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
             'main.js' => "console.log('first');\n",
-            'style.css' => "body { color: red; }\n",
-            'assets/logo.png' => "PNG-BYTES",
+            'style.css' => SAMPLE_BODY_CSS,
+            'assets/logo.png' => 'PNG-BYTES',
         ]);
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-
-        // Drive the protected copyFrontend via reflection so the test stays
-        // independent of the parent LibraryInstaller's download pipeline.
-        $copy = (new ReflectionMethod($installer, 'copyFrontend'))
-            ->getClosure($installer);
-        $copy($fixture['installPath'], $fixture['package']);
+        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
 
         $destination = destinationFor('test-plugin');
         expect(is_dir($destination))->toBeTrue();
         expect(file_get_contents($destination.'main.js'))->toBe("console.log('first');\n");
-        expect(file_get_contents($destination.'style.css'))->toBe("body { color: red; }\n");
+        expect(file_get_contents($destination.'style.css'))->toBe(SAMPLE_BODY_CSS);
         expect(file_get_contents($destination.'assets/logo.png'))->toBe('PNG-BYTES');
-
-        $fixture['cleanup']();
-    } finally {
-        resetPublicPluginsDir();
-        chdir($previousCwd);
-        if (is_dir($work)) {
-            rmdir($work);
-        }
-    }
+    });
+    $fixture['cleanup']();
 });
 
 test('copyFrontend() overwrites existing files in the destination on re-run', function (): void {
-    $work = sys_get_temp_dir().'/spora-plugin-frontend-test-'.uniqid('', true);
-    mkdir($work, 0o755, true);
-    $previousCwd = getcwd();
-    chdir($work);
-
-    try {
-        $fixture = buildFakePluginPackage('acme/test-plugin', 'spora-plugin-frontend', [
+    inTempWorkdir(function () use (&$fixture): void {
+        $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
             'main.js' => "console.log('v1');\n",
-            'style.css' => "body { color: red; }\n",
+            'style.css' => SAMPLE_BODY_CSS,
         ]);
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-        $copy = (new ReflectionMethod($installer, 'copyFrontend'))
-            ->getClosure($installer);
 
-        // First install
-        $copy($fixture['installPath'], $fixture['package']);
+        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
         expect(file_get_contents(destinationFor('test-plugin').'main.js'))->toBe("console.log('v1');\n");
 
-        // Rewrite the source to simulate a plugin update that re-bundles its
-        // frontend, then re-run the copy. The destination must reflect the
-        // new bytes (overwrite, not stale merge).
         file_put_contents($fixture['frontendDir'].'/main.js', "console.log('v2');\n");
-        $copy($fixture['installPath'], $fixture['package']);
+        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
 
         expect(file_get_contents(destinationFor('test-plugin').'main.js'))->toBe("console.log('v2');\n");
-
-        $fixture['cleanup']();
-    } finally {
-        resetPublicPluginsDir();
-        chdir($previousCwd);
-        if (is_dir($work)) {
-            rmdir($work);
-        }
-    }
+    });
+    $fixture['cleanup']();
 });
 
 test('copyFrontend() silently skips packages that do not ship a frontend/ directory', function (): void {
-    $work = sys_get_temp_dir().'/spora-plugin-frontend-test-'.uniqid('', true);
-    mkdir($work, 0o755, true);
-    $previousCwd = getcwd();
-    chdir($work);
-
-    try {
-        $installPath = sys_get_temp_dir().'/spora-plugin-fixture-'.uniqid('', true);
+    inTempWorkdir(function (): void {
+        $installPath = sys_get_temp_dir().FIXTURE_PREFIX.uniqid('', true);
         mkdir($installPath, 0o755, true);
 
         $package = new Package('acme/no-ui', '1.0.0.0', '1.0.0'); // NOSONAR — Composer's 4-segment canonical version
         $package->setType('spora-plugin-frontend');
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-        $copy = (new ReflectionMethod($installer, 'copyFrontend'))
-            ->getClosure($installer);
-        $copy($installPath, $package);
+        $installer->copyFrontend($installPath, $package);
 
-        // Nothing should have been written under public/plugins/.
         expect(is_dir(getcwd().'/public'))->toBeFalse();
 
         rmdir($installPath);
-    } finally {
-        resetPublicPluginsDir();
-        chdir($previousCwd);
-        if (is_dir($work)) {
-            rmdir($work);
-        }
-    }
+    });
 });
 
 test('uninstall hook removes the plugin destination entirely', function (): void {
-    $work = sys_get_temp_dir().'/spora-plugin-frontend-test-'.uniqid('', true);
-    mkdir($work, 0o755, true);
-    $previousCwd = getcwd();
-    chdir($work);
-
-    try {
-        $fixture = buildFakePluginPackage('acme/test-plugin', 'spora-plugin-frontend', [
+    inTempWorkdir(function () use (&$fixture): void {
+        $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
             'main.js' => "console.log('x');\n",
             'assets/logo.png' => 'PNG-BYTES',
         ]);
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-        $copy = (new ReflectionMethod($installer, 'copyFrontend'))
-            ->getClosure($installer);
-        $copy($fixture['installPath'], $fixture['package']);
+        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
 
         $destination = destinationFor('test-plugin');
         expect(is_dir($destination))->toBeTrue();
 
-        $removeDestination = (new ReflectionMethod($installer, 'getPluginDestination'))
-            ->getClosure($installer);
-        $dest = $removeDestination($fixture['package']);
+        $dest = $installer->getPluginDestination($fixture['package']);
 
         // Use the public Filesystem API the installer itself uses, so the
         // test exercises the same code path as production.
@@ -247,37 +216,18 @@ test('uninstall hook removes the plugin destination entirely', function (): void
         $fs->removeDirectory($dest);
 
         expect(is_dir($destination))->toBeFalse();
-
-        $fixture['cleanup']();
-    } finally {
-        resetPublicPluginsDir();
-        chdir($previousCwd);
-        if (is_dir($work)) {
-            rmdir($work);
-        }
-    }
+    });
+    $fixture['cleanup']();
 });
 
 test('getPluginDestination() uses the last segment of the package name as the slug', function (): void {
-    $work = sys_get_temp_dir().'/spora-plugin-frontend-test-'.uniqid('', true);
-    mkdir($work, 0o755, true);
-    $previousCwd = getcwd();
-    chdir($work);
-
-    try {
+    inTempWorkdir(function (): void {
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-        $getDestination = (new ReflectionMethod($installer, 'getPluginDestination'))
-            ->getClosure($installer);
 
-        $acme = new Package('acme/test-plugin', '1.0.0.0', '1.0.0'); // NOSONAR
+        $acme = new Package(SAMPLE_PLUGIN_NAME, '1.0.0.0', '1.0.0'); // NOSONAR
         $core = new Package('spora-ai/spora-plugin-media-archive', '1.0.0.0', '1.0.0'); // NOSONAR
 
-        expect($getDestination($acme))->toBe('public/plugins/test-plugin/');
-        expect($getDestination($core))->toBe('public/plugins/spora-plugin-media-archive/');
-    } finally {
-        chdir($previousCwd);
-        if (is_dir($work)) {
-            rmdir($work);
-        }
-    }
+        expect($installer->getPluginDestination($acme))->toBe('public/plugins/test-plugin/');
+        expect($installer->getPluginDestination($core))->toBe('public/plugins/spora-plugin-media-archive/');
+    });
 });

@@ -38,11 +38,11 @@ use React\Promise\PromiseInterface;
  */
 final class SporaPluginFrontendInstaller extends LibraryInstaller
 {
-    private const SPORA_PLUGIN_FRONTEND_TYPE = 'spora-plugin-frontend';
+    public const SPORA_PLUGIN_FRONTEND_TYPE = 'spora-plugin-frontend';
 
-    private const FRONTEND_SOURCE_DIR = 'frontend';
+    public const FRONTEND_SOURCE_DIR = 'frontend';
 
-    private const PUBLIC_DESTINATION_DIR = 'public/plugins';
+    public const PUBLIC_DESTINATION_DIR = 'public/plugins';
 
     public function __construct(IOInterface $io, Composer $composer, ?Filesystem $filesystem = null)
     {
@@ -58,15 +58,6 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
     public function supports(string $packageType): bool
     {
         return $packageType === self::SPORA_PLUGIN_FRONTEND_TYPE;
-    }
-
-    public function getInstallPath(PackageInterface $package): string
-    {
-        // Composer still downloads the package to its default vendor location;
-        // we never rely on the returned path ourselves, but Composer's
-        // installation manager and download manager do, so it must be a real,
-        // writable path inside the project.
-        return parent::getInstallPath($package);
     }
 
     public function install(InstalledRepositoryInterface $repo, PackageInterface $package)
@@ -121,24 +112,16 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
      * the same short-name slug as {@see SporaPluginInstaller} so the public
      * path matches the on-disk plugin directory.
      */
-    private function getPluginDestination(PackageInterface $package): string
+    public function getPluginDestination(PackageInterface $package): string
     {
-        $slug = $this->pluginSlug($package);
-
-        return self::PUBLIC_DESTINATION_DIR.'/'.$slug.'/';
+        return self::PUBLIC_DESTINATION_DIR.'/'.self::pluginSlug($package).'/';
     }
 
-    private function pluginSlug(PackageInterface $package): string
-    {
-        // Pretty name is always `<vendor>/<name>` for non-metapackages; the
-        // short name is the canonical Composer identifier for a package.
-        $prettyName = $package->getPrettyName();
-        $parts = explode('/', $prettyName);
-
-        return end($parts);
-    }
-
-    private function copyFrontend(string $installPath, PackageInterface $package): void
+    /**
+     * Public to keep the installer's helper methods unit-testable without
+     * reflection. Production callers go through {@see install()} / {@see update()}.
+     */
+    public function copyFrontend(string $installPath, PackageInterface $package): void
     {
         $source = rtrim($installPath, '/').'/'.self::FRONTEND_SOURCE_DIR;
 
@@ -158,10 +141,20 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
         $this->filesystem->copy($source, $destination);
     }
 
-    private function isManagedDestination(string $destination): bool
+    public function isManagedDestination(string $destination): bool
     {
         $normalized = rtrim($destination, '/').'/';
 
         return str_starts_with($normalized, self::PUBLIC_DESTINATION_DIR.'/');
+    }
+
+    private static function pluginSlug(PackageInterface $package): string
+    {
+        // Pretty name is always `<vendor>/<name>` for non-metapackages; the
+        // short name is the canonical Composer identifier for a package.
+        $prettyName = $package->getPrettyName();
+        $parts = explode('/', $prettyName);
+
+        return end($parts);
     }
 }
