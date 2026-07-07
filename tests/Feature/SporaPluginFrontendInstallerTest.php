@@ -195,7 +195,7 @@ test('copyFrontend() silently skips packages that do not ship a frontend/ direct
     });
 });
 
-test('uninstall hook removes the plugin destination entirely', function (): void {
+test('removeDestinationSafely() removes the destination when it is managed', function (): void {
     inTempWorkdir(function () use (&$fixture): void {
         $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
             'main.js' => "console.log('x');\n",
@@ -208,16 +208,50 @@ test('uninstall hook removes the plugin destination entirely', function (): void
         $destination = destinationFor('test-plugin');
         expect(is_dir($destination))->toBeTrue();
 
-        $dest = $installer->getPluginDestination($fixture['package']);
-
-        // Use the public Filesystem API the installer itself uses, so the
-        // test exercises the same code path as production.
-        $fs = new \Composer\Util\Filesystem();
-        $fs->removeDirectory($dest);
+        // Drive the helper that backs uninstall()'s then-callback. The
+        // uninstall() entry point chains a parent::uninstall() promise
+        // which pulls in the Composer download manager — not worth
+        // mocking here. We test the actual safety + delete logic.
+        $installer->removeDestinationSafely($installer->getPluginDestination($fixture['package']));
 
         expect(is_dir($destination))->toBeFalse();
     });
     $fixture['cleanup']();
+});
+
+test('removeDestinationSafely() refuses to delete a destination outside public/plugins/', function (): void {
+    inTempWorkdir(function () use (&$offLimits): void {
+        // Use an absolute path so the assertion doesn't depend on
+        // inTempWorkdir's CWD mechanics.
+        $offLimits = sys_get_temp_dir().TEST_WORK_PREFIX.uniqid('', true).'/somewhere/else';
+        mkdir($offLimits, 0o755, true);
+        file_put_contents($offLimits.'/keepme.txt', 'do not delete');
+
+        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+
+        $installer->removeDestinationSafely($offLimits.'/');
+
+        // The guard must reject this path — file should still exist.
+        expect(is_file($offLimits.'/keepme.txt'))->toBeTrue();
+    });
+
+    if (isset($offLimits)) {
+        @unlink($offLimits.'/keepme.txt');
+        @rmdir($offLimits);
+    }
+});
+
+test('isManagedDestination() rejects traversal segments like ../', function (): void {
+    $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+
+    expect($installer->isManagedDestination('public/plugins/foo/'))->toBeTrue();
+    expect($installer->isManagedDestination('public/plugins/foo/bar.js'))->toBeTrue();
+    expect($installer->isManagedDestination('public/plugins'))->toBeTrue();
+
+    expect($installer->isManagedDestination('public/plugins/../etc/'))->toBeFalse();
+    expect($installer->isManagedDestination('public/plugins/./foo/'))->toBeFalse();
+    expect($installer->isManagedDestination('private/plugins/foo/'))->toBeFalse();
+    expect($installer->isManagedDestination('/etc/passwd'))->toBeFalse();
 });
 
 test('getPluginDestination() uses the last segment of the package name as the slug', function (): void {

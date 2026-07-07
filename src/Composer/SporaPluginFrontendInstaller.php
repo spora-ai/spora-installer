@@ -23,10 +23,13 @@ use React\Promise\PromiseInterface;
  * `/plugins/<slug>/main.js` at runtime without any extra `/dist/` nesting.
  *
  * The slug is the last segment of the package name — mirroring how
- * {@see SporaPluginInstaller} derives the plugin directory — so that two
- * plugins with the same short name from different vendors would collide.
- * Composer treats the short name as unique within a project, which is the
- * same convention used everywhere else in the Spora plugin layout.
+ * {@see SporaPluginInstaller} derives the plugin directory. Note that
+ * Composer's package identity is `<vendor>/<name>`, so two packages
+ * from different vendors that happen to share a short name would
+ * collide on disk. We treat this as a Spora convention, not a
+ * Composer guarantee — the spora-ai org owns all plugin packages
+ * shipped via the public Packagist distribution, and operators who
+ * vendor plugins privately should keep the short names unique.
  *
  * Behaviour:
  * - A package without a `frontend/` directory is treated as "no UI shipped"
@@ -98,13 +101,23 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
         }
 
         return $promise->then(function () use ($destination): void {
-            // Only remove the destination if it looks like ours (i.e. inside
-            // `public/plugins/`). This guards against deleting an unrelated
-            // directory in the unlikely case someone reuses the slug.
-            if ($this->isManagedDestination($destination) && is_dir($destination)) {
-                $this->filesystem->removeDirectory($destination);
-            }
+            $this->removeDestinationSafely($destination);
         });
+    }
+
+    /**
+     * Delete the destination only when it looks like ours (i.e. inside
+     * `public/plugins/`). Extracted from the uninstall() promise body so
+     * the safety check + Filesystem::removeDirectory() call can be unit
+     * tested directly without mocking the full Composer uninstall chain.
+     *
+     * Public for the same testability reason as {@see copyFrontend()}.
+     */
+    public function removeDestinationSafely(string $destination): void
+    {
+        if ($this->isManagedDestination($destination) && is_dir($destination)) {
+            $this->filesystem->removeDirectory($destination);
+        }
     }
 
     /**
@@ -143,9 +156,21 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
 
     public function isManagedDestination(string $destination): bool
     {
-        $normalized = rtrim($destination, '/').'/';
+        // Reject any path that tries to escape via traversal segments
+        // before the prefix check. `public/plugins/../etc/` would
+        // otherwise pass `str_starts_with($normalized, 'public/plugins/')`.
+        $trimmed = rtrim($destination, '/');
+        if ($trimmed === self::PUBLIC_DESTINATION_DIR) {
+            return true;
+        }
+        $segments = explode('/', $trimmed);
+        foreach ($segments as $segment) {
+            if ($segment === '..' || $segment === '.') {
+                return false;
+            }
+        }
 
-        return str_starts_with($normalized, self::PUBLIC_DESTINATION_DIR.'/');
+        return str_starts_with($trimmed.'/', self::PUBLIC_DESTINATION_DIR.'/');
     }
 
     private static function pluginSlug(PackageInterface $package): string
