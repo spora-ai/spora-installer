@@ -6,10 +6,11 @@ use Composer\Composer;
 use Composer\IO\NullIO;
 use Mockery as M;
 use Spora\Composer\SporaFrontendInstaller;
+use Spora\Composer\SporaPluginFrontendInstaller;
 use Spora\Composer\SporaPluginInstaller;
 use Spora\Composer\SporaPluginInstallerPlugin;
 
-test('activate() registers both Spora installers with the InstallationManager', function (): void {
+test('activate() registers all three Spora installers with the InstallationManager', function (): void {
     $manager = M::mock(\Composer\Installer\InstallationManager::class);
     $manager->shouldReceive('addInstaller')
         ->once()
@@ -19,6 +20,10 @@ test('activate() registers both Spora installers with the InstallationManager', 
         ->once()
         ->ordered()
         ->with(M::type(SporaFrontendInstaller::class));
+    $manager->shouldReceive('addInstaller')
+        ->once()
+        ->ordered()
+        ->with(M::type(SporaPluginFrontendInstaller::class));
 
     // Real Config so LibraryInstaller's `$config->get('vendor-dir')`
     // resolves without us guessing Composer internals; the rest of the
