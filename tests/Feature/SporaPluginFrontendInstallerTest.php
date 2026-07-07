@@ -17,6 +17,7 @@ const SAMPLE_BODY_CSS = "body { color: red; }\n";
 const SAMPLE_PLUGIN_NAME = 'acme/test-plugin';
 const TEST_WORK_PREFIX = '/spora-plugin-frontend-test-';
 const FIXTURE_PREFIX = '/spora-plugin-fixture-';
+const KEEPME_FILENAME = 'keepme.txt';
 
 /**
  * Build a Composer mock that survives `new SporaPluginFrontendInstaller($io, $composer)`.
@@ -225,18 +226,18 @@ test('removeDestinationSafely() refuses to delete a destination outside public/p
         // inTempWorkdir's CWD mechanics.
         $offLimits = sys_get_temp_dir().TEST_WORK_PREFIX.uniqid('', true).'/somewhere/else';
         mkdir($offLimits, 0o755, true);
-        file_put_contents($offLimits.'/keepme.txt', 'do not delete');
+        file_put_contents($offLimits.'/'.KEEPME_FILENAME, 'do not delete');
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
 
         $installer->removeDestinationSafely($offLimits.'/');
 
         // The guard must reject this path — file should still exist.
-        expect(is_file($offLimits.'/keepme.txt'))->toBeTrue();
+        expect(is_file($offLimits.'/'.KEEPME_FILENAME))->toBeTrue();
     });
 
     if (isset($offLimits)) {
-        @unlink($offLimits.'/keepme.txt');
+        @unlink($offLimits.'/'.KEEPME_FILENAME);
         @rmdir($offLimits);
     }
 });
