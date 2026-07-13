@@ -196,31 +196,47 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
     public static function pluginSlug(PackageInterface $package): string
     {
         $extra = $package->getExtra();
-        if (!is_array($extra)) {
-            throw new InvalidArgumentException(sprintf(
-                "SporaPluginFrontendInstaller: package '%s' (type spora-plugin-frontend) has no composer.json#extra block — declare '\"extra\": {\"spora-plugin-slug\": \"<parent-slug>\"}' in composer.json, where <parent-slug> is the slug from the parent PHP plugin's plugin.json#slug.",
-                $package->getPrettyName(),
-            ));
-        }
+        $slug  = is_array($extra) ? ($extra['spora-plugin-slug'] ?? null) : null;
 
-        $slug = $extra['spora-plugin-slug'] ?? null;
         if (!is_string($slug) || $slug === '') {
-            throw new InvalidArgumentException(sprintf(
-                "SporaPluginFrontendInstaller: package '%s' (type spora-plugin-frontend) is missing composer.json#extra.spora-plugin-slug. Declare '\"extra\": {\"spora-plugin-slug\": \"<parent-slug>\"}' in composer.json, where <parent-slug> is the slug from the parent PHP plugin's plugin.json#slug.",
-                $package->getPrettyName(),
-            ));
+            self::throwSlugError($package, null, self::SLUG_REASON_MISSING);
         }
 
         // Defensive: the destination is on the public web root, so reject
         // slugs that could escape it via traversal or absolute paths.
         if (str_contains($slug, '/') || str_contains($slug, '\\') || str_contains($slug, '..')) {
-            throw new InvalidArgumentException(sprintf(
-                "SporaPluginFrontendInstaller: package '%s' declared an invalid spora-plugin-slug '%s' (must not contain '/', '\\\\', or '..').",
-                $package->getPrettyName(),
-                $slug,
-            ));
+            self::throwSlugError($package, $slug, self::SLUG_REASON_INVALID);
         }
 
         return $slug;
+    }
+
+    /** @var string — package's composer.json#extra block is missing or has no spora-plugin-slug key */
+    private const SLUG_REASON_MISSING = 'missing';
+
+    /** @var string — spora-plugin-slug is present but contains path-traversal characters */
+    private const SLUG_REASON_INVALID = 'invalid';
+
+    /**
+     * Single throw site for every slug-validation failure. Centralised
+     * to keep the operator-facing message in one place (SonarCloud
+     * duplication on the previous version's three throws was 19%) and
+     * so adding new validation rules doesn't multiply error templates.
+     */
+    private static function throwSlugError(PackageInterface $package, ?string $slug, string $reason): never
+    {
+        $message = match ($reason) {
+            self::SLUG_REASON_MISSING => sprintf(
+                "SporaPluginFrontendInstaller: package '%s' (type spora-plugin-frontend) is missing composer.json#extra.spora-plugin-slug. Declare '\"extra\": {\"spora-plugin-slug\": \"<parent-slug>\"}' in composer.json, where <parent-slug> is the slug from the parent PHP plugin's plugin.json#slug.",
+                $package->getPrettyName(),
+            ),
+            self::SLUG_REASON_INVALID => sprintf(
+                "SporaPluginFrontendInstaller: package '%s' declared an invalid spora-plugin-slug '%s' (must not contain '/', '\\\\', or '..').",
+                $package->getPrettyName(),
+                $slug,
+            ),
+        };
+
+        throw new InvalidArgumentException($message);
     }
 }
