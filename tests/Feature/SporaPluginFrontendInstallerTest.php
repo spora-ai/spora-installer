@@ -207,75 +207,37 @@ test('copyFrontend() silently skips packages that do not ship a frontend/ direct
     });
 });
 
-test('copyFrontend() routes to public/plugins/<extra.spora-plugin-slug>/, not the package short name', function (): void {
-    // The package's composer short name is 'foo-frontend', but its
-    // extra.spora-plugin-slug declares 'media-archive' — the installer's
-    // destination MUST follow the declaration, not the short name.
-    inTempWorkdir(function () use (&$fixture): void {
-        $fixture = buildFakePluginPackage('acme/foo-frontend', 'spora-plugin-frontend', [
+test('copyFrontend() respects extra.spora-plugin-slug (positive + negative cases)', function (
+    string $prettyName,
+    ?string $slug,
+    string $mode,
+    ?string $assertSlug = null,
+): void {
+    inTempWorkdir(function () use (&$fixture, $prettyName, $slug, $mode, $assertSlug): void {
+        $fixture = buildFakePluginPackage($prettyName, 'spora-plugin-frontend', [
             'main.js' => "console.log('hi');\n",
-        ], 'media-archive');
-
-        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
-
-        expect(is_dir(destinationFor('media-archive')))->toBeTrue();
-        expect(is_dir(destinationFor('foo-frontend')))->toBeFalse();
-        expect(file_get_contents(destinationFor('media-archive').'main.js'))
-            ->toBe("console.log('hi');\n");
-    });
-    $fixture['cleanup']();
-});
-
-test('copyFrontend() throws InvalidArgumentException when extra.spora-plugin-slug is missing', function (): void {
-    inTempWorkdir(function () use (&$fixture): void {
-        // null = simulate a package without the extra block at all.
-        $fixture = buildFakePluginPackage('acme/missing-slug', 'spora-plugin-frontend', [
-            'main.js' => "console.log('hi');\n",
-        ], null);
+        ], $slug);
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
 
-        expect(fn () => $installer->copyFrontend($fixture['installPath'], $fixture['package']))
-            ->toThrow(
-                InvalidArgumentException::class,
-                'extra.spora-plugin-slug',
-            );
-
-        // The destination must NOT be created — fail-loud means no
-        // partial install.
-        expect(is_dir(getcwd().'/public'))->toBeFalse();
-    });
-    $fixture['cleanup']();
-});
-
-test('copyFrontend() throws InvalidArgumentException when extra.spora-plugin-slug is empty', function (): void {
-    inTempWorkdir(function () use (&$fixture): void {
-        $fixture = buildFakePluginPackage('acme/empty-slug', 'spora-plugin-frontend', [
-            'main.js' => "console.log('hi');\n",
-        ], '');
-
-        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+        if ($mode === 'route') {
+            $installer->copyFrontend($fixture['installPath'], $fixture['package']);
+            expect(is_dir(destinationFor($assertSlug)))->toBeTrue();
+            expect(file_get_contents(destinationFor($assertSlug).'main.js'))
+                ->toBe("console.log('hi');\n");
+            return;
+        }
 
         expect(fn () => $installer->copyFrontend($fixture['installPath'], $fixture['package']))
             ->toThrow(InvalidArgumentException::class);
     });
     $fixture['cleanup']();
-});
-
-test('copyFrontend() rejects slugs that contain path-traversal segments', function (): void {
-    inTempWorkdir(function () use (&$fixture): void {
-        $fixture = buildFakePluginPackage('acme/evil-slug', 'spora-plugin-frontend', [
-            'main.js' => "console.log('hi');\n",
-        ], '../../etc');
-
-        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-
-        expect(fn () => $installer->copyFrontend($fixture['installPath'], $fixture['package']))
-            ->toThrow(InvalidArgumentException::class);
-    });
-    $fixture['cleanup']();
-});
+})->with([
+    'routes to declared slug (not the short name)' => ['acme/foo-frontend', 'media-archive', 'route', 'media-archive'],
+    'rejects missing extra.spora-plugin-slug'       => ['acme/missing-slug', null,           'throws'],
+    'rejects empty slug'                            => ['acme/empty-slug',   '',             'throws'],
+    'rejects path-traversal slug'                    => ['acme/evil-slug',    '../../etc',    'throws'],
+]);
 
 test('removeDestinationSafely() removes the destination when it is managed', function (): void {
     inTempWorkdir(function () use (&$fixture): void {
