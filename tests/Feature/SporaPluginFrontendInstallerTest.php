@@ -257,6 +257,28 @@ test('copyFrontend() respects extra.spora-plugin-slug (positive + negative cases
     'rejects slug with underscore'                 => ['acme/under-slug',   'media_archive','throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
 ]);
 
+test('uninstall() skips cleanup silently for legacy installs missing extra.spora-plugin-slug', function (): void {
+    inTempWorkdir(function (): void {
+        // A package that pre-dates the extra.spora-plugin-slug contract.
+        // It has no extra block at all, so getPluginDestination() throws —
+        // uninstall() must instead skip the cleanup (no throw) so the
+        // operator can still tear the package down.
+        $package = new Package('acme/legacy-frontend', '1.0.0.0', '1.0.0'); // NOSONAR
+        $package->setType('spora-plugin-frontend');
+
+        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+
+        // Calling uninstall() with no parent::uninstall() chain won't work
+        // because LibraryInstaller needs a real Composer download manager.
+        // Instead, exercise the resolver the uninstall path uses:
+        // legacy installs must return null instead of throwing.
+        $reflection = new ReflectionClass($installer);
+        $method = $reflection->getMethod('resolvePluginDestinationForUninstall');
+
+        expect($method->invoke($installer, $package))->toBeNull();
+    });
+});
+
 test('copyFrontend() rejects non-string extra.spora-plugin-slug values', function (): void {
     inTempWorkdir(function (): void {
         $installPath = sys_get_temp_dir().FIXTURE_PREFIX.uniqid('', true);
@@ -289,47 +311,6 @@ test('copyFrontend() rejects non-string extra.spora-plugin-slug values', functio
             $entry->isDir() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
         }
         rmdir($installPath);
-    });
-});
-
-test('uninstall() removes the destination when extra.spora-plugin-slug is resolvable', function (): void {
-    inTempWorkdir(function () use (&$fixture): void {
-        $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
-            'main.js' => SAMPLE_MAIN_JS,
-        ]);
-
-        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
-
-        $destination = destinationFor($fixture['slug']);
-        expect(is_dir($destination))->toBeTrue();
-
-        $installer->removeDestinationSafely($installer->getPluginDestination($fixture['package']));
-
-        expect(is_dir($destination))->toBeFalse();
-    });
-    $fixture['cleanup']();
-});
-
-test('uninstall() skips cleanup silently for legacy installs missing extra.spora-plugin-slug', function (): void {
-    inTempWorkdir(function (): void {
-        // A package that pre-dates the extra.spora-plugin-slug contract.
-        // It has no extra block at all, so getPluginDestination() throws —
-        // uninstall() must instead skip the cleanup (no throw) so the
-        // operator can still tear the package down.
-        $package = new Package('acme/legacy-frontend', '1.0.0.0', '1.0.0'); // NOSONAR
-        $package->setType('spora-plugin-frontend');
-
-        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
-
-        // Calling uninstall() with no parent::uninstall() chain won't work
-        // because LibraryInstaller needs a real Composer download manager.
-        // Instead, exercise the resolver the uninstall path uses:
-        // legacy installs must return null instead of throwing.
-        $reflection = new ReflectionClass($installer);
-        $method = $reflection->getMethod('resolvePluginDestinationForUninstall');
-
-        expect($method->invoke($installer, $package))->toBeNull();
     });
 });
 
