@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Spora\Composer;
 
-use Composer\Composer;
 use Composer\Installer\LibraryInstaller;
-use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 
 /**
@@ -18,11 +16,6 @@ final class SporaPluginInstaller extends LibraryInstaller
 {
     private const SPORA_PLUGIN_TYPE = 'spora-plugin';
 
-    public function __construct(IOInterface $io, Composer $composer)
-    {
-        parent::__construct($io, $composer);
-    }
-
     public function supports(string $packageType): bool
     {
         return $packageType === self::SPORA_PLUGIN_TYPE;
@@ -30,7 +23,7 @@ final class SporaPluginInstaller extends LibraryInstaller
 
     public function getInstallPath(PackageInterface $package): string
     {
-        [$vendor, $name] = explode('/', $package->getPrettyName());
+        [, $name] = explode('/', $package->getPrettyName());
 
         return "plugins/{$name}/";
     }
