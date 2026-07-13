@@ -16,11 +16,22 @@ final class SporaPluginInstaller extends LibraryInstaller
 {
     private const SPORA_PLUGIN_TYPE = 'spora-plugin';
 
+    /**
+     * Determine whether this installer handles the given Composer package type.
+     */
     public function supports(string $packageType): bool
     {
         return $packageType === self::SPORA_PLUGIN_TYPE;
     }
 
+    /**
+     * Return the plugin installation directory derived from the package's short name.
+     *
+     * The vendor segment is discarded; the spora-ai Packagist org
+     * guarantees uniqueness of short names for the public distribution.
+     * Operators who vendor plugin packages privately must keep the short
+     * names unique on disk.
+     */
     public function getInstallPath(PackageInterface $package): string
     {
         [, $name] = explode('/', $package->getPrettyName());

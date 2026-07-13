@@ -6,6 +6,7 @@ use Composer\Composer;
 use Composer\Config;
 use Composer\IO\NullIO;
 use Composer\Package\Package;
+use InvalidArgumentException;
 use Mockery as M;
 use Spora\Composer\SporaPluginFrontendInstaller;
 
@@ -212,8 +213,9 @@ test('copyFrontend() respects extra.spora-plugin-slug (positive + negative cases
     ?string $slug,
     string $mode,
     ?string $assertSlug = null,
+    ?string $assertMessageContains = null,
 ): void {
-    inTempWorkdir(function () use (&$fixture, $prettyName, $slug, $mode, $assertSlug): void {
+    inTempWorkdir(function () use (&$fixture, $prettyName, $slug, $mode, $assertSlug, $assertMessageContains): void {
         $fixture = buildFakePluginPackage($prettyName, 'spora-plugin-frontend', [
             'main.js' => "console.log('hi');\n",
         ], $slug);
@@ -228,16 +230,105 @@ test('copyFrontend() respects extra.spora-plugin-slug (positive + negative cases
             return;
         }
 
-        expect(fn () => $installer->copyFrontend($fixture['installPath'], $fixture['package']))
-            ->toThrow(InvalidArgumentException::class);
+        try {
+            $installer->copyFrontend($fixture['installPath'], $fixture['package']);
+            throw new BadMethodCallException('Expected InvalidArgumentException, none thrown.');
+        } catch (InvalidArgumentException $e) {
+            if ($assertMessageContains !== null) {
+                expect($e->getMessage())->toContain($assertMessageContains);
+            }
+        }
+
+        // A throw must not leave a partial public/plugins directory behind.
+        expect(is_dir(getcwd().'/public'))->toBeFalse();
     });
     $fixture['cleanup']();
 })->with([
-    'routes to declared slug (not the short name)' => ['acme/foo-frontend', 'media-archive', 'route', 'media-archive'],
-    'rejects missing extra.spora-plugin-slug'       => ['acme/missing-slug', null,           'throws'],
-    'rejects empty slug'                            => ['acme/empty-slug',   '',             'throws'],
-    'rejects path-traversal slug'                    => ['acme/evil-slug',    '../../etc',    'throws'],
+    'routes to declared slug (not the short name)' => ['acme/foo-frontend', 'media-archive', 'route', 'media-archive', null],
+    'rejects missing extra.spora-plugin-slug'      => ['acme/missing-slug', null,           'throws', null,           'extra.spora-plugin-slug'],
+    'rejects empty slug'                           => ['acme/empty-slug',   '',             'throws', null,           'invalid spora-plugin-slug'],
+    'rejects path-traversal slug'                  => ['acme/evil-slug',    '../../etc',    'throws', null,           'invalid spora-plugin-slug'],
+    'rejects backslash slug'                       => ['acme/bs-slug',      'foo\\bar',     'throws', null,           'invalid spora-plugin-slug'],
+    'rejects whitespace-only slug'                 => ['acme/ws-slug',      '   ',          'throws', null,           'invalid spora-plugin-slug'],
+    'rejects slug with uppercase characters'       => ['acme/upper-slug',   'Media-Archive','throws', null,           'invalid spora-plugin-slug'],
+    'rejects slug with underscore'                 => ['acme/under-slug',   'media_archive','throws', null,           'invalid spora-plugin-slug'],
 ]);
+
+test('copyFrontend() rejects non-string extra.spora-plugin-slug values', function (): void {
+    inTempWorkdir(function (): void {
+        $installPath = sys_get_temp_dir().FIXTURE_PREFIX.uniqid('', true);
+        mkdir($installPath.'/frontend', 0o755, true);
+        file_put_contents($installPath.'/frontend/main.js', "console.log('x');\n");
+
+        $package = new Package('acme/int-slug', '1.0.0.0', '1.0.0'); // NOSONAR
+        $package->setType('spora-plugin-frontend');
+        // Intentionally non-string: a hand-rolled composer.json that sets
+        // `"spora-plugin-slug": 42` (or true / []) must not slip through.
+        $package->setExtra(['spora-plugin-slug' => 42]);
+
+        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+
+        try {
+            $installer->copyFrontend($installPath, $package);
+            throw new BadMethodCallException('Expected InvalidArgumentException, none thrown.');
+        } catch (InvalidArgumentException $e) {
+            expect($e->getMessage())->toContain('non-string');
+        }
+
+        // A throw must not leave a partial public/plugins directory behind.
+        expect(is_dir(getcwd().'/public'))->toBeFalse();
+
+        $rii = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($installPath, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($rii as $entry) {
+            $entry->isDir() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
+        }
+        rmdir($installPath);
+    });
+});
+
+test('uninstall() removes the destination when extra.spora-plugin-slug is resolvable', function (): void {
+    inTempWorkdir(function () use (&$fixture): void {
+        $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
+            'main.js' => "console.log('x');\n",
+        ]);
+
+        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+        $installer->copyFrontend($fixture['installPath'], $fixture['package']);
+
+        $destination = destinationFor($fixture['slug']);
+        expect(is_dir($destination))->toBeTrue();
+
+        $installer->removeDestinationSafely($installer->getPluginDestination($fixture['package']));
+
+        expect(is_dir($destination))->toBeFalse();
+    });
+    $fixture['cleanup']();
+});
+
+test('uninstall() skips cleanup silently for legacy installs missing extra.spora-plugin-slug', function (): void {
+    inTempWorkdir(function (): void {
+        // A package that pre-dates the extra.spora-plugin-slug contract.
+        // It has no extra block at all, so getPluginDestination() throws —
+        // uninstall() must instead skip the cleanup (no throw) so the
+        // operator can still tear the package down.
+        $package = new Package('acme/legacy-frontend', '1.0.0.0', '1.0.0'); // NOSONAR
+        $package->setType('spora-plugin-frontend');
+
+        $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
+
+        // Calling uninstall() with no parent::uninstall() chain won't work
+        // because LibraryInstaller needs a real Composer download manager.
+        // Instead, exercise the resolver the uninstall path uses:
+        // legacy installs must return null instead of throwing.
+        $reflection = new ReflectionClass($installer);
+        $method = $reflection->getMethod('resolvePluginDestinationForUninstall');
+
+        expect($method->invoke($installer, $package))->toBeNull();
+    });
+});
 
 test('removeDestinationSafely() removes the destination when it is managed', function (): void {
     inTempWorkdir(function () use (&$fixture): void {
