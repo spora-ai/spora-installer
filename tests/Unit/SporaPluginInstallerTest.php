@@ -26,9 +26,11 @@ test('getInstallPath() returns plugins/{name}/ regardless of vendor', function (
 test('getInstallPath() uses just the last segment of the package name', function (): void {
     $installer = new SporaPluginInstaller(new NullIO(), makeComposerMock());
 
-    // Two packages from different vendors with the same short name must
-    // not collide — the routing uses the short segment, which Composer
-    // treats as the unique plugin directory.
+    // Two packages from different vendors with the same short name will
+    // collide on disk — the routing discards the vendor segment. Operators
+    // who vendor plugin packages privately must keep the short names
+    // unique; the spora-ai Packagist org guarantees uniqueness for
+    // publicly distributed plugins.
     $acme = new Package('acme/foo', '1.0.0.0', '1.0.0'); // NOSONAR — Composer's 4-segment canonical version, not a network address
     $core = new Package('spora-ai/foo', '1.0.0.0', '1.0.0'); // NOSONAR — Composer's 4-segment canonical version, not a network address
 
