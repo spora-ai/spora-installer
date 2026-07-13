@@ -10,6 +10,7 @@ use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 use Composer\Repository\InstalledRepositoryInterface;
 use Composer\Util\Filesystem;
+use InvalidArgumentException;
 use React\Promise\PromiseInterface;
 
 /**
@@ -22,14 +23,22 @@ use React\Promise\PromiseInterface;
  * `public/plugins/{$slug}/`, so the host SPA can lazy-load
  * `/plugins/<slug>/main.js` at runtime without any extra `/dist/` nesting.
  *
- * The slug is the last segment of the package name — mirroring how
- * {@see SporaPluginInstaller} derives the plugin directory. Note that
- * Composer's package identity is `<vendor>/<name>`, so two packages
- * from different vendors that happen to share a short name would
- * collide on disk. We treat this as a Spora convention, not a
- * Composer guarantee — the spora-ai org owns all plugin packages
- * shipped via the public Packagist distribution, and operators who
- * vendor plugins privately should keep the short names unique.
+ * The slug is read from `composer.json#extra.spora-plugin-slug` on the
+ * frontend package. The frontend's parent PHP plugin (a sibling Composer
+ * package) carries its slug in its own `plugin.json#slug`; the installer
+ * can't read that file (it doesn't know which parent the frontend pairs
+ * with), so the frontend must declare the slug itself. The value MUST
+ * match the parent plugin's `plugin.json#slug` exactly — the host SPA's
+ * `/api/v1/apps` response emits that slug, and a mismatch leaves the
+ * bundle unreachable at runtime.
+ *
+ * If `extra.spora-plugin-slug` is absent or empty, the installer refuses
+ * to install the package and throws {@see \Spora\Composer\Exceptions\PluginInstallFailedException}
+ * with a message pointing at the missing field. There is no fallback to
+ * the package short name — silent fallback produced a runtime 404 in
+ * the past when the parent plugin's slug (`media-archive`) differed from
+ * the frontend package's short name (`spora-plugin-media-archive-frontend`).
+ * Fail-loud is the contract.
  *
  * Behaviour:
  * - A package without a `frontend/` directory is treated as "no UI shipped"
@@ -38,6 +47,8 @@ use React\Promise\PromiseInterface;
  *   without changing the install path.
  * - Existing files at the destination are overwritten on install/update.
  * - On uninstall, the entire `public/plugins/{$slug}/` directory is removed.
+ *
+ * @see docs/spora-plugin-frontend.md (operator + author docs)
  */
 final class SporaPluginFrontendInstaller extends LibraryInstaller
 {
@@ -173,13 +184,43 @@ final class SporaPluginFrontendInstaller extends LibraryInstaller
         return str_starts_with($trimmed.'/', self::PUBLIC_DESTINATION_DIR.'/');
     }
 
-    private static function pluginSlug(PackageInterface $package): string
+    /**
+     * Read `extra.spora-plugin-slug` from the frontend package's
+     * composer.json. Strict: missing or empty throws — see the class
+     * docblock for why. The slug must match the parent PHP plugin's
+     * `plugin.json#slug`.
+     *
+     * Exposed (not private) so the test suite can exercise the same
+     * resolution path without driving a full install.
+     */
+    public static function pluginSlug(PackageInterface $package): string
     {
-        // Pretty name is always `<vendor>/<name>` for non-metapackages; the
-        // short name is the canonical Composer identifier for a package.
-        $prettyName = $package->getPrettyName();
-        $parts = explode('/', $prettyName);
+        $extra = $package->getExtra();
+        if (!is_array($extra)) {
+            throw new InvalidArgumentException(sprintf(
+                "SporaPluginFrontendInstaller: package '%s' (type spora-plugin-frontend) has no composer.json#extra block — declare '\"extra\": {\"spora-plugin-slug\": \"<parent-slug>\"}' in composer.json, where <parent-slug> is the slug from the parent PHP plugin's plugin.json#slug.",
+                $package->getPrettyName(),
+            ));
+        }
 
-        return end($parts);
+        $slug = $extra['spora-plugin-slug'] ?? null;
+        if (!is_string($slug) || $slug === '') {
+            throw new InvalidArgumentException(sprintf(
+                "SporaPluginFrontendInstaller: package '%s' (type spora-plugin-frontend) is missing composer.json#extra.spora-plugin-slug. Declare '\"extra\": {\"spora-plugin-slug\": \"<parent-slug>\"}' in composer.json, where <parent-slug> is the slug from the parent PHP plugin's plugin.json#slug.",
+                $package->getPrettyName(),
+            ));
+        }
+
+        // Defensive: the destination is on the public web root, so reject
+        // slugs that could escape it via traversal or absolute paths.
+        if (str_contains($slug, '/') || str_contains($slug, '\\') || str_contains($slug, '..')) {
+            throw new InvalidArgumentException(sprintf(
+                "SporaPluginFrontendInstaller: package '%s' declared an invalid spora-plugin-slug '%s' (must not contain '/', '\\\\', or '..').",
+                $package->getPrettyName(),
+                $slug,
+            ));
+        }
+
+        return $slug;
     }
 }
