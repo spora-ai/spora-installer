@@ -15,11 +15,14 @@ afterEach(function () {
 });
 
 const SAMPLE_BODY_CSS = "body { color: red; }\n";
+const SAMPLE_MAIN_JS = "console.log('x');\n";
 const SAMPLE_PLUGIN_NAME = 'acme/test-plugin';
 const SAMPLE_SLUG = 'test-plugin';
 const TEST_WORK_PREFIX = '/spora-plugin-frontend-test-';
 const FIXTURE_PREFIX = '/spora-plugin-fixture-';
 const KEEPME_FILENAME = 'keepme.txt';
+const EXPECTED_SLUG_ERROR_PREFIX = 'invalid spora-plugin-slug';
+const PUBLIC_DIR = '/public';
 
 /**
  * Build a Composer mock that survives `new SporaPluginFrontendInstaller($io, $composer)`.
@@ -127,7 +130,7 @@ function destinationFor(string $slug): string
 
 function resetPublicPluginsDir(): void
 {
-    $public = getcwd().'/public';
+    $public = getcwd().PUBLIC_DIR;
     if (is_dir($public)) {
         $rii = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($public, FilesystemIterator::SKIP_DOTS),
@@ -202,7 +205,7 @@ test('copyFrontend() silently skips packages that do not ship a frontend/ direct
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
         $installer->copyFrontend($installPath, $package);
 
-        expect(is_dir(getcwd().'/public'))->toBeFalse();
+        expect(is_dir(getcwd().PUBLIC_DIR))->toBeFalse();
 
         rmdir($installPath);
     });
@@ -240,25 +243,25 @@ test('copyFrontend() respects extra.spora-plugin-slug (positive + negative cases
         }
 
         // A throw must not leave a partial public/plugins directory behind.
-        expect(is_dir(getcwd().'/public'))->toBeFalse();
+        expect(is_dir(getcwd().PUBLIC_DIR))->toBeFalse();
     });
     $fixture['cleanup']();
 })->with([
     'routes to declared slug (not the short name)' => ['acme/foo-frontend', 'media-archive', 'route', 'media-archive', null],
     'rejects missing extra.spora-plugin-slug'      => ['acme/missing-slug', null,           'throws', null,           'extra.spora-plugin-slug'],
-    'rejects empty slug'                           => ['acme/empty-slug',   '',             'throws', null,           'invalid spora-plugin-slug'],
-    'rejects path-traversal slug'                  => ['acme/evil-slug',    '../../etc',    'throws', null,           'invalid spora-plugin-slug'],
-    'rejects backslash slug'                       => ['acme/bs-slug',      'foo\\bar',     'throws', null,           'invalid spora-plugin-slug'],
-    'rejects whitespace-only slug'                 => ['acme/ws-slug',      '   ',          'throws', null,           'invalid spora-plugin-slug'],
-    'rejects slug with uppercase characters'       => ['acme/upper-slug',   'Media-Archive','throws', null,           'invalid spora-plugin-slug'],
-    'rejects slug with underscore'                 => ['acme/under-slug',   'media_archive','throws', null,           'invalid spora-plugin-slug'],
+    'rejects empty slug'                           => ['acme/empty-slug',   '',             'throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
+    'rejects path-traversal slug'                  => ['acme/evil-slug',    '../../etc',    'throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
+    'rejects backslash slug'                       => ['acme/bs-slug',      'foo\\bar',     'throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
+    'rejects whitespace-only slug'                 => ['acme/ws-slug',      '   ',          'throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
+    'rejects slug with uppercase characters'       => ['acme/upper-slug',   'Media-Archive','throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
+    'rejects slug with underscore'                 => ['acme/under-slug',   'media_archive','throws', null,           EXPECTED_SLUG_ERROR_PREFIX],
 ]);
 
 test('copyFrontend() rejects non-string extra.spora-plugin-slug values', function (): void {
     inTempWorkdir(function (): void {
         $installPath = sys_get_temp_dir().FIXTURE_PREFIX.uniqid('', true);
         mkdir($installPath.'/frontend', 0o755, true);
-        file_put_contents($installPath.'/frontend/main.js', "console.log('x');\n");
+        file_put_contents($installPath.'/frontend/main.js', SAMPLE_MAIN_JS);
 
         $package = new Package('acme/int-slug', '1.0.0.0', '1.0.0'); // NOSONAR
         $package->setType('spora-plugin-frontend');
@@ -276,7 +279,7 @@ test('copyFrontend() rejects non-string extra.spora-plugin-slug values', functio
         }
 
         // A throw must not leave a partial public/plugins directory behind.
-        expect(is_dir(getcwd().'/public'))->toBeFalse();
+        expect(is_dir(getcwd().PUBLIC_DIR))->toBeFalse();
 
         $rii = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($installPath, FilesystemIterator::SKIP_DOTS),
@@ -292,7 +295,7 @@ test('copyFrontend() rejects non-string extra.spora-plugin-slug values', functio
 test('uninstall() removes the destination when extra.spora-plugin-slug is resolvable', function (): void {
     inTempWorkdir(function () use (&$fixture): void {
         $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
-            'main.js' => "console.log('x');\n",
+            'main.js' => SAMPLE_MAIN_JS,
         ]);
 
         $installer = new SporaPluginFrontendInstaller(new NullIO(), makePluginFrontendComposerMock());
@@ -333,7 +336,7 @@ test('uninstall() skips cleanup silently for legacy installs missing extra.spora
 test('removeDestinationSafely() removes the destination when it is managed', function (): void {
     inTempWorkdir(function () use (&$fixture): void {
         $fixture = buildFakePluginPackage(SAMPLE_PLUGIN_NAME, 'spora-plugin-frontend', [
-            'main.js' => "console.log('x');\n",
+            'main.js' => SAMPLE_MAIN_JS,
             'assets/logo.png' => 'PNG-BYTES',
         ]);
 
