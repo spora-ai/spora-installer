@@ -8,7 +8,7 @@ use Composer\Installer\LibraryInstaller;
 use Composer\Package\PackageInterface;
 
 /**
- * Routes packages of type `spora-frontend` to `public/dist/` when installed
+ * Routes packages of type `spora-frontend` to `public/spora/` when installed
  * via Composer. Other types fall through to Composer's default library
  * installer unchanged.
  *
@@ -27,6 +27,6 @@ final class SporaFrontendInstaller extends LibraryInstaller
 
     public function getInstallPath(PackageInterface $package): string
     {
-        return 'public/dist/';
+        return 'public/spora/';
     }
 }
