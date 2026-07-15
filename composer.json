@@ -1,6 +1,6 @@
 {
     "name": "spora-ai/installer",
-    "description": "Routes `spora-plugin` packages to `plugins/{$name}/` and `spora-frontend` packages to `public/dist/` when installed via Composer. Companion to spora-ai/spora-core.",
+    "description": "Routes `spora-plugin` packages to `plugins/{$name}/`, `spora-frontend` packages to `public/spora/`, and `spora-plugin-frontend` packages to `public/plugins/{$slug}/` when installed via Composer. Companion to spora-ai/spora-core.",
     "type": "composer-plugin",
     "license": "MIT",
     "require": {

@@ -1,9 +1,10 @@
 # spora/installer
 
 Composer plugin for [Spora](https://github.com/spora-ai/spora-core). Routes
-two Composer package types:
+three Composer package types:
 
 - `spora-plugin` → `plugins/{$name}/`
+- `spora-frontend` → `public/spora/`
 - `spora-plugin-frontend` → `public/plugins/{$slug}/`
 
 …instead of Composer's default `vendor/` install location.

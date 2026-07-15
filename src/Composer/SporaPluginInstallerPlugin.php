@@ -15,8 +15,8 @@ use Composer\Plugin\PluginInterface;
  * - {@see SporaPluginInstaller} routes `spora-plugin` packages into
  *   `plugins/{$name}/` instead of the default `vendor/` location.
  * - {@see SporaFrontendInstaller} routes `spora-frontend` packages into
- *   `public/dist/` — the prebuilt frontend assets the operator's PHP
- *   project serves at runtime.
+ *   `public/spora/` — the prebuilt frontend assets the operator's PHP
+ *   project serves at runtime under the `/spora/*` URL prefix.
  * - {@see SporaPluginFrontendInstaller} routes `spora-plugin-frontend`
  *   packages into `public/plugins/{$slug}/`, copying the plugin's bundled
  *   `frontend/` directory there so the host SPA can lazy-load each plugin's
